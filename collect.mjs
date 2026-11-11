@@ -9,6 +9,8 @@
  * Sources :
  *   AFX Kwayisi    → JSE, NGX, BRVM, NSE Kenya, GSE, BSE, LuSE, ZSE, USE, MSE
  *   Investing.com  → EGX 30, MASI, TUNINDEX, SEMDEX (puis Yahoo Finance en secours)
+ *   BRVM officiel  → BRVM Composite (brvm.org)
+ *   NGX officiel   → NGX All Share (ngxgroup.com)
  *   (DSE Tanzanie et RSE Rwanda sont collectés directement par le backend PENDO)
  */
 
@@ -63,8 +65,29 @@ async function fromYahoo(id) {
   return { value: meta.regularMarketPrice, change: round2(change), source: 'Yahoo Finance' };
 }
 
+// ── Sites officiels (accessibles depuis GitHub Actions) ─────────────
+async function fromBrvm() {
+  const html = await get('https://www.brvm.org/fr');
+  const m = html.match(/<td>BRVM-C<\/td>\s*<td[^>]*>([\d\s .,]+)<\/td>\s*<td[^>]*>\s*([+-]?[\d\s .,]+)%\s*<span class="icone-seance\s*(\w*)/);
+  if (!m) throw new Error('BRVM-C introuvable');
+  const frNum = (x) => parseFloat(x.replace(/[\s ]/g, '').replace(',', '.'));
+  const value = frNum(m[1]);
+  let change = frNum(m[2]);
+  if (m[3] === 'bad' && change > 0) change = -change;
+  return { value, change: round2(change), source: 'BRVM Official' };
+}
+
+async function fromNgx() {
+  const json = JSON.parse(await get('https://ngxgroup.com/wp-json/ngx-data-widgets/v1/home/index-chart?index=ASI', 30000));
+  const q = json?.quote;
+  if (!q?.currentPrice) throw new Error('ASI introuvable');
+  return { value: q.currentPrice, change: round2(q.changePercentage || 0), source: 'NGX Official' };
+}
+
 async function collect(id) {
   const chain = [];
+  if (id === 'brvm') chain.push(fromBrvm);
+  if (id === 'nse_ng') chain.push(fromNgx);
   if (AFX[id]) chain.push(() => fromAfx(id));
   if (INVESTING[id]) chain.push(() => fromInvesting(id));
   if (YAHOO[id]) chain.push(() => fromYahoo(id));
