@@ -12,6 +12,8 @@
  *   BRVM officiel  → BRVM Composite (brvm.org)
  *   NGX officiel   → NGX All Share (ngxgroup.com)
  *   Casablanca     → MASI (casablanca-bourse.com, données JSON intégrées à la page)
+ *   SEM officiel   → SEMDEX (variation calculée par le backend)
+ *   Mubasher       → EGX 30
  *   (DSE Tanzanie et RSE Rwanda sont collectés directement par le backend PENDO)
  */
 
@@ -112,8 +114,28 @@ async function fromCasablanca() {
   return { value: round2(parseFloat(m[1])), change: round2(parseFloat(m[2])), source: 'Bourse de Casablanca' };
 }
 
+async function fromSem() {
+  const html = await get('https://www.stockexchangeofmauritius.com/');
+  const m = html.match(/class="name">SEMDEX<\/div>\s*<div class="num (plus|minus)[^"]*">(?:<span[^>]*><\/span>)?\s*([\d,.]+)/);
+  if (!m) throw new Error('SEMDEX introuvable');
+  // La page ne donne pas la variation : le backend la calcule depuis la clôture précédente
+  return { value: num(m[2]), change: null, source: 'SEM Official' };
+}
+
+async function fromMubasherEgx() {
+  const html = await get('https://english.mubasher.info/markets/EGX');
+  const v = html.match(/market-summary__last-price[^"]*">\s*([\d,.]+)/);
+  const c = html.match(/market-summary__change-percentage number (up|down)[^"]*">\s*(-?[\d.]+)%/);
+  if (!v) throw new Error('EGX30 introuvable');
+  let change = c ? parseFloat(c[2]) : null;
+  if (c && c[1] === 'down' && change > 0) change = -change;
+  return { value: num(v[1]), change: change === null ? null : round2(change), source: 'Mubasher' };
+}
+
 async function collect(id) {
   const chain = [];
+  if (id === 'sem') chain.push(fromSem);
+  if (id === 'egx') chain.push(fromMubasherEgx);
   if (id === 'masi') chain.push(fromCasablanca);
   if (id === 'brvm') chain.push(fromBrvm);
   if (id === 'nse_ng') chain.push(fromNgx);
@@ -138,7 +160,7 @@ const ONLY = new Set((process.env.PENDO_ONLY || '').split(',').map((x) => x.trim
 const IDS = [...Object.keys(AFX), ...Object.keys(INVESTING)]
   .filter((id) => !SKIP.has(id) && (!ONLY.size || ONLY.has(id)));
 const results = (await Promise.all(IDS.map(collect))).filter(Boolean);
-for (const r of results) console.log(`  ✓ ${r.id.padEnd(7)} ${String(r.value).padStart(12)}  ${r.change >= 0 ? '+' : ''}${r.change}%  [${r.source}]`);
+for (const r of results) console.log(`  ✓ ${r.id.padEnd(7)} ${String(r.value).padStart(12)}  ${r.change === null ? '(variation calculée par le backend)' : `${r.change >= 0 ? '+' : ''}${r.change}%`}  [${r.source}]`);
 console.log(`\n${results.length}/${IDS.length} indices collectés`);
 
 if (DRY_RUN) process.exit(0);

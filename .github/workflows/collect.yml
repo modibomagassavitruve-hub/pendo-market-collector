@@ -24,6 +24,6 @@ jobs:
       - name: Collecter et envoyer au backend PENDO
         env:
           PENDO_CRON_SECRET: ${{ secrets.PENDO_CRON_SECRET }}
-          # Depuis GitHub, seuls les sites officiels BRVM, NGX et Casablanca répondent ; le reste vient du Mac
-          PENDO_ONLY: brvm,nse_ng,masi
+          # Depuis GitHub, seules ces sources répondent (BRVM, NGX, Casablanca, SEM, Mubasher) ; le reste vient du Mac
+          PENDO_ONLY: brvm,nse_ng,masi,sem,egx
         run: node collect.mjs
