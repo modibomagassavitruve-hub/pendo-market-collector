@@ -8,7 +8,12 @@ const get = (url) => new Promise((resolve) => {
 });
 const show = (label, b, re, n = 6) => {
   let m, k = 0; const r = new RegExp(re, 'gi');
-  while ((m = r.exec(b)) && k < n) { console.log(`${label} @${m.index}: ${b.slice(Math.max(0, m.index - 80), m.index + 300).replace(/\s+/g, ' ')}`); k++; }
+  while ((m = r.exec(b)) && k < n) {
+    const raw = b.slice(Math.max(0, m.index - 80), m.index + 400);
+    const txt = raw.replace(/<[^>]*>/g, ' ').replace(/https?:\/\/\S+/g, '').replace(/[?&=]/g, ' ').replace(/\s+/g, ' ');
+    const keys = raw.replace(/https?:\/\/\S+/g, '').match(/(class|id|data-[\w-]+)="[^"]{0,40}"/g) || [];
+    console.log(`${label} #${k}: ${txt.slice(0, 260)}  [${keys.slice(0, 5).join(' ')}]`); k++;
+  }
   if (!k) console.log(`${label}: rien`);
 };
 const sem = await get('https://www.stockexchangeofmauritius.com/');
