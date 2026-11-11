@@ -1,23 +1,14 @@
 import https from 'node:https';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const get = (url) => new Promise((resolve) => {
-  const req = https.get(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html,*/*' }, agent: new https.Agent({ rejectUnauthorized: false }), timeout: 20000 }, (res) => {
+  const req = https.get(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html,*/*' }, timeout: 20000 }, (res) => {
     let b = ''; res.setEncoding('utf8'); res.on('data', (c) => (b += c)); res.on('end', () => resolve(b));
   });
   req.on('timeout', () => req.destroy(new Error('timeout'))); req.on('error', () => resolve(''));
 });
-const show = (label, b, re, n = 6) => {
-  let m, k = 0; const r = new RegExp(re, 'gi');
-  while ((m = r.exec(b)) && k < n) {
-    const raw = b.slice(Math.max(0, m.index - 80), m.index + 400);
-    const txt = raw.replace(/<[^>]*>/g, ' ').replace(/https?:\/\/\S+/g, '').replace(/[?&=]/g, ' ').replace(/\s+/g, ' ');
-    const keys = raw.replace(/https?:\/\/\S+/g, '').match(/(class|id|data-[\w-]+)="[^"]{0,40}"/g) || [];
-    console.log(`${label} #${k}: ${txt.slice(0, 260)}  [${keys.slice(0, 5).join(' ')}]`); k++;
-  }
-  if (!k) console.log(`${label}: rien`);
-};
+const clean = (s) => s.replace(/https?:\/\/[^\s"']+/g, 'URL').replace(/\s+/g, ' ');
 const sem = await get('https://www.stockexchangeofmauritius.com/');
-show('SEM', sem, 'SEMDEX(?![^<]{0,40}trading quotes)', 8);
+let i = sem.indexOf('title-latest'); console.log('SEM-A', clean(sem.slice(i - 400, i + 400)));
+i = sem.indexOf('fade-down'); console.log('SEM-B', clean(sem.slice(i, i + 700)));
 const mub = await get('https://english.mubasher.info/markets/EGX');
-show('MUB', mub, '"(?:lastPrice|price|close|value|changePercentage|change_percent)"\\s*:', 6);
-show('MUB30', mub, 'EGX\\s?30', 6);
+i = mub.indexOf('market-summary__last-price'); console.log('MUB', clean(mub.slice(i - 100, i + 900)));
