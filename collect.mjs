@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+/**
+ * PENDO — collecteur des indices boursiers africains.
+ *
+ * Tourne sur GitHub Actions (dépôt public = minutes gratuites). Récupère les indices
+ * puis les envoie au backend PENDO, qui les valide et les enregistre.
+ * Aucun accès direct à la base ; seul secret : PENDO_CRON_SECRET (secret GitHub).
+ *
+ * Sources :
+ *   AFX Kwayisi    → JSE, NGX, BRVM, NSE Kenya, GSE, BSE, LuSE, ZSE, USE, MSE
+ *   Investing.com  → EGX 30, MASI, TUNINDEX, SEMDEX (puis Yahoo Finance en secours)
+ *   (DSE Tanzanie et RSE Rwanda sont collectés directement par le backend PENDO)
+ */
+
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const BACKEND = process.env.PENDO_BACKEND_URL || 'https://pendo-backend.vercel.app';
+const SECRET = process.env.PENDO_CRON_SECRET;
+const DRY_RUN = process.argv.includes('--dry-run');
+
+const AFX = { jse: '/jse/', nse_ng: '/ngx/', brvm: '/brvm/', nse_ke: '/nse/', gse: '/gse/',
+  bse: '/bse/', luse: '/luse/', zse: '/zse/', use: '/use/', mse: '/mse/' };
+const INVESTING = { egx: 'egx30', masi: 'masi', bvmt: 'tunindex', sem: 'semdex' };
+const YAHOO = { egx: '^CASE30', masi: '^MASI', bvmt: 'TUNINDEX.TN', sem: '^SEMDEX', jse: '^J203.JO' };
+
+const round2 = (n) => Math.round(n * 100) / 100;
+const num = (s) => parseFloat(String(s).replace(/,/g, ''));
+
+async function get(url, timeout = 20000) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, 'Accept': 'text/html,application/json,*/*', 'Accept-Language': 'en-US,en;q=0.9' },
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+async function fromAfx(id) {
+  const html = await get(`https://afx.kwayisi.org${AFX[id]}`);
+  const table = html.match(/<table\s+style[^>]*>([\s\S]*?)<\/table>/);
+  const td = table && table[0].match(/<td>([\d,]+\.?\d*)\s*<span\s+class=(hi|lo)>\(([+-]?[\d,.]+)\)<\/span>/);
+  if (!td) throw new Error('format AFX inattendu');
+  const value = num(td[1]);
+  const pts = Math.abs(num(td[3])) * (td[2] === 'lo' ? -1 : 1);
+  const prev = value - pts;
+  const change = prev ? (pts / prev) * 100 : 0;
+  return { value, change: round2(change), source: 'AFX Kwayisi' };
+}
+
+async function fromInvesting(id) {
+  const html = await get(`https://www.investing.com/indices/${INVESTING[id]}`);
+  const p = html.match(/data-test="instrument-price-last"[^>]*>([\d,.]+)/);
+  if (!p) throw new Error('prix introuvable');
+  const c = html.match(/data-test="instrument-price-change-percent"[^>]*>\(?([+-]?[\d.]+)%?\)?/);
+  return { value: num(p[1]), change: c ? round2(parseFloat(c[1])) : 0, source: 'Investing.com' };
+}
+
+async function fromYahoo(id) {
+  const raw = await get(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[id])}?interval=1d&range=5d`);
+  const meta = JSON.parse(raw)?.chart?.result?.[0]?.meta;
+  if (!meta?.regularMarketPrice) throw new Error('pas de prix');
+  const prev = meta.chartPreviousClose || meta.previousClose;
+  const change = prev ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0;
+  return { value: meta.regularMarketPrice, change: round2(change), source: 'Yahoo Finance' };
+}
+
+async function collect(id) {
+  const chain = [];
+  if (AFX[id]) chain.push(() => fromAfx(id));
+  if (INVESTING[id]) chain.push(() => fromInvesting(id));
+  if (YAHOO[id]) chain.push(() => fromYahoo(id));
+  const errors = [];
+  for (const fn of chain) {
+    try {
+      const r = await fn();
+      if (r && r.value > 0) return { id, ...r };
+    } catch (e) { errors.push(e.message); }
+  }
+  console.log(`  ✗ ${id.padEnd(7)} ${errors.join(' | ')}`);
+  return null;
+}
+
+const IDS = [...Object.keys(AFX), ...Object.keys(INVESTING)];
+const results = (await Promise.all(IDS.map(collect))).filter(Boolean);
+for (const r of results) console.log(`  ✓ ${r.id.padEnd(7)} ${String(r.value).padStart(12)}  ${r.change >= 0 ? '+' : ''}${r.change}%  [${r.source}]`);
+console.log(`\n${results.length}/${IDS.length} indices collectés`);
+
+if (DRY_RUN) process.exit(0);
+if (!SECRET) { console.error('PENDO_CRON_SECRET manquant'); process.exit(1); }
+if (!results.length) { console.error('Aucun indice collecté'); process.exit(1); }
+
+const res = await fetch(`${BACKEND}/api/cron/ingest-markets`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SECRET}` },
+  body: JSON.stringify({ markets: results }),
+  signal: AbortSignal.timeout(30000),
+});
+const body = await res.text();
+console.log(`Backend : HTTP ${res.status} ${body.slice(0, 300)}`);
+if (!res.ok) process.exit(1);
