@@ -11,8 +11,11 @@
  *   Investing.com  → EGX 30, MASI, TUNINDEX, SEMDEX (puis Yahoo Finance en secours)
  *   BRVM officiel  → BRVM Composite (brvm.org)
  *   NGX officiel   → NGX All Share (ngxgroup.com)
+ *   Casablanca     → MASI (casablanca-bourse.com, données JSON intégrées à la page)
  *   (DSE Tanzanie et RSE Rwanda sont collectés directement par le backend PENDO)
  */
+
+import https from 'node:https';
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const BACKEND = process.env.PENDO_BACKEND_URL || 'https://pendo-backend.vercel.app';
@@ -84,8 +87,34 @@ async function fromNgx() {
   return { value: q.currentPrice, change: round2(q.changePercentage || 0), source: 'NGX Official' };
 }
 
+// Le site de la Bourse de Casablanca sert une chaîne de certificats incomplète :
+// on désactive la vérification uniquement pour cette requête (lecture de données publiques).
+function getInsecure(url, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': UA, 'Accept': 'text/html' },
+      agent: new https.Agent({ rejectUnauthorized: false }),
+      timeout,
+    }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)); }
+      let body = ''; res.setEncoding('utf8');
+      res.on('data', (c) => (body += c)); res.on('end', () => resolve(body));
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+async function fromCasablanca() {
+  const html = await getInsecure('https://www.casablanca-bourse.com/live-market/indices');
+  const m = html.match(/"code":"MASI","value":([\d.]+),"previous_close":[^,]*,"change_pct":(-?[\d.]+)/);
+  if (!m) throw new Error('MASI introuvable');
+  return { value: round2(parseFloat(m[1])), change: round2(parseFloat(m[2])), source: 'Bourse de Casablanca' };
+}
+
 async function collect(id) {
   const chain = [];
+  if (id === 'masi') chain.push(fromCasablanca);
   if (id === 'brvm') chain.push(fromBrvm);
   if (id === 'nse_ng') chain.push(fromNgx);
   if (AFX[id]) chain.push(() => fromAfx(id));

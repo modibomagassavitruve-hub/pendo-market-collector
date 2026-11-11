@@ -11,7 +11,7 @@ les envoie au backend PENDO, qui les valide avant de les enregistrer.
 
 | Source | Indices |
 |---|---|
-| Sites officiels | BRVM Composite (brvm.org), NGX All Share (ngxgroup.com) |
+| Sites officiels | BRVM Composite (brvm.org), NGX All Share (ngxgroup.com), MASI (casablanca-bourse.com) |
 | AFX Kwayisi | JSE, NGX, BRVM, NSE Kenya, GSE, BSE, LuSE, ZSE, USE, MSE |
 | Investing.com (Yahoo Finance en secours) | EGX 30, MASI, TUNINDEX, SEMDEX |
 
