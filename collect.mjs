@@ -116,10 +116,11 @@ async function fromCasablanca() {
 
 async function fromSem() {
   const html = await get('https://www.stockexchangeofmauritius.com/');
-  const m = html.match(/class="name">SEMDEX<\/div>\s*<div class="num (plus|minus)[^"]*">(?:<span[^>]*><\/span>)?\s*([\d,.]+)/);
+  const m = html.match(/class="name">SEMDEX<\/div>\s*<div class="num[^"]*">(?:\s*<\/?span[^>]*>)*\s*([\d,]+\.\d+)/)
+    || html.match(/class="name">SEMDEX<\/div>[\s\S]{0,200}?class="title-latest">LATEST<\/div>\s*<div class="name[^"]*">([\d,]+\.\d+)/);
   if (!m) throw new Error('SEMDEX introuvable');
   // La page ne donne pas la variation : le backend la calcule depuis la clôture précédente
-  return { value: num(m[2]), change: null, source: 'SEM Official' };
+  return { value: num(m[1]), change: null, source: 'SEM Official' };
 }
 
 async function fromMubasherEgx() {
