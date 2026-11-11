@@ -1,11 +1,12 @@
 name: Collecte des indices africains
 
 on:
-  schedule:
-    # Toutes les 15 min pendant les heures des bourses africaines (7h-17h UTC, lun-ven)
-    - cron: '*/15 7-17 * * 1-5'
-    # Clôture
-    - cron: '0 20 * * 1-5'
+  # Planification désactivée : depuis GitHub Actions, toutes les sources testées
+  # bloquent (AFX : connexion refusée, Investing.com : 403, Yahoo : 429).
+  # À réactiver si une source accepte les serveurs GitHub.
+  # schedule:
+  #   - cron: '*/15 7-17 * * 1-5'
+  #   - cron: '0 20 * * 1-5'
   workflow_dispatch:
 
 concurrency:
