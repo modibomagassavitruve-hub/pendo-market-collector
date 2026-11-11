@@ -102,7 +102,9 @@ async function collect(id) {
   return null;
 }
 
-const IDS = [...Object.keys(AFX), ...Object.keys(INVESTING)];
+// PENDO_SKIP=brvm,nse_ng : indices déjà collectés ailleurs (ex. par GitHub Actions)
+const SKIP = new Set((process.env.PENDO_SKIP || '').split(',').map((x) => x.trim()).filter(Boolean));
+const IDS = [...Object.keys(AFX), ...Object.keys(INVESTING)].filter((id) => !SKIP.has(id));
 const results = (await Promise.all(IDS.map(collect))).filter(Boolean);
 for (const r of results) console.log(`  ✓ ${r.id.padEnd(7)} ${String(r.value).padStart(12)}  ${r.change >= 0 ? '+' : ''}${r.change}%  [${r.source}]`);
 console.log(`\n${results.length}/${IDS.length} indices collectés`);
