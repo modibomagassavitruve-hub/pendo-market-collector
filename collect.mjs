@@ -126,7 +126,7 @@ async function fromSem() {
 async function fromMubasherEgx() {
   const html = await get('https://english.mubasher.info/markets/EGX');
   const v = html.match(/market-summary__last-price[^"]*">\s*([\d,.]+)/);
-  const c = html.match(/market-summary__change-percentage number (up|down)[^"]*">\s*(-?[\d.]+)%/);
+  const c = html.match(/market-summary__change-percentage[^"]*?\b(up|down)\b[^"]*"[^>]*>\s*\(?\s*([+-]?[\d.]+)\s*%/);
   if (!v) throw new Error('EGX30 introuvable');
   let change = c ? parseFloat(c[2]) : null;
   if (c && c[1] === 'down' && change > 0) change = -change;
