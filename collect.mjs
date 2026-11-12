@@ -14,6 +14,8 @@
  *   Casablanca     → MASI (casablanca-bourse.com, données JSON intégrées à la page)
  *   SEM officiel   → SEMDEX (variation calculée par le backend)
  *   Mubasher       → EGX 30
+ *   Ilboursa       → TUNINDEX (ilboursa.com, page d'accueil)
+ *   Trading Economics → NSX Overall, TUNINDEX en secours (valeur seule ; variation calculée par le backend)
  *   (DSE Tanzanie et RSE Rwanda sont collectés directement par le backend PENDO)
  */
 
@@ -27,6 +29,8 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const AFX = { jse: '/jse/', nse_ng: '/ngx/', brvm: '/brvm/', nse_ke: '/nse/', gse: '/gse/',
   bse: '/bse/', luse: '/luse/', zse: '/zse/', use: '/use/', mse: '/mse/' };
 const INVESTING = { egx: 'egx30', masi: 'masi', bvmt: 'tunindex', sem: 'semdex' };
+// Trading Economics : [chemin de la page, nom de l'indice dans les données intégrées]
+const TE = { nsx: ['namibia/stock-market', 'NSX Overall'], bvmt: ['tunisia/stock-market', 'TUN'] };
 const YAHOO = { egx: '^CASE30', masi: '^MASI', bvmt: 'TUNINDEX.TN', sem: '^SEMDEX', jse: '^J203.JO' };
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -133,6 +137,25 @@ async function fromMubasherEgx() {
   return { value: num(v[1]), change: change === null ? null : round2(change), source: 'Mubasher' };
 }
 
+// 18 812,07 ou 18 812,07 (espace insécable) → 18812.07
+const numFr = (s) => parseFloat(String(s).replace(/[\s  .]/g, '').replace(',', '.'));
+
+async function fromIlboursa() {
+  const html = await get('https://www.ilboursa.com/');
+  const m = html.match(/cotation_PX1"[^>]*>\s*TUNINDEX\s*<\/a>\s*<\/div>\s*<div>\s*<span>([\d\s  .,]+)<\/span>\s*<span[^>]*>\s*([+-]?[\d,]+)\s*%/);
+  if (!m) throw new Error('TUNINDEX introuvable sur Ilboursa');
+  return { value: numFr(m[1]), change: round2(numFr(m[2])), source: 'Ilboursa' };
+}
+
+async function fromTradingEconomics(id) {
+  const [path, name] = TE[id];
+  const html = await get(`https://tradingeconomics.com/${path}`);
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = html.match(new RegExp(`"last":([\\d.]+),"type":"Index","name":"${esc}"`));
+  if (!m) throw new Error(`${name} introuvable sur Trading Economics`);
+  return { value: round2(parseFloat(m[1])), change: null, source: 'Trading Economics' };
+}
+
 async function collect(id) {
   const chain = [];
   if (id === 'sem') chain.push(fromSem);
@@ -140,9 +163,11 @@ async function collect(id) {
   if (id === 'masi') chain.push(fromCasablanca);
   if (id === 'brvm') chain.push(fromBrvm);
   if (id === 'nse_ng') chain.push(fromNgx);
+  if (id === 'bvmt') chain.push(fromIlboursa);
   if (AFX[id]) chain.push(() => fromAfx(id));
   if (INVESTING[id]) chain.push(() => fromInvesting(id));
   if (YAHOO[id]) chain.push(() => fromYahoo(id));
+  if (TE[id]) chain.push(() => fromTradingEconomics(id));
   const errors = [];
   for (const fn of chain) {
     try {
@@ -158,7 +183,7 @@ async function collect(id) {
 const SKIP = new Set((process.env.PENDO_SKIP || '').split(',').map((x) => x.trim()).filter(Boolean));
 // PENDO_ONLY=brvm,nse_ng : ne collecter que ces indices
 const ONLY = new Set((process.env.PENDO_ONLY || '').split(',').map((x) => x.trim()).filter(Boolean));
-const IDS = [...Object.keys(AFX), ...Object.keys(INVESTING)]
+const IDS = [...new Set([...Object.keys(AFX), ...Object.keys(INVESTING), ...Object.keys(TE)])]
   .filter((id) => !SKIP.has(id) && (!ONLY.size || ONLY.has(id)));
 const results = (await Promise.all(IDS.map(collect))).filter(Boolean);
 for (const r of results) console.log(`  ✓ ${r.id.padEnd(7)} ${String(r.value).padStart(12)}  ${r.change === null ? '(variation calculée par le backend)' : `${r.change >= 0 ? '+' : ''}${r.change}%`}  [${r.source}]`);

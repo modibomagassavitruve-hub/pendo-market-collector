@@ -25,5 +25,5 @@ jobs:
         env:
           PENDO_CRON_SECRET: ${{ secrets.PENDO_CRON_SECRET }}
           # Depuis GitHub, seules ces sources répondent (BRVM, NGX, Casablanca, SEM, Mubasher) ; le reste vient du Mac
-          PENDO_ONLY: brvm,nse_ng,masi,sem,egx
+          PENDO_ONLY: brvm,nse_ng,masi,sem,egx,bvmt,nsx
         run: node collect.mjs
